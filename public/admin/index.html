@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f0e7">
+  <title>Administración · Camila Gastrobar</title>
+  <link rel="stylesheet" href="/assets/admin.css">
+</head>
+<body>
+  <a class="skip-link" href="#admin-main">Saltar al contenido</a>
+  <div class="admin-shell">
+    <aside class="admin-sidebar">
+      <a class="brand" href="/" translate="no">camila<span>.</span></a>
+      <p class="sidebar-label">ESPACIO DEL RESTAURANTE</p>
+      <nav class="admin-nav" aria-label="Secciones de administración">
+        <button class="admin-nav-link is-active" type="button" data-view-target="sala"><span aria-hidden="true">▦</span> Sala y mesas</button>
+        <button class="admin-nav-link" type="button" data-view-target="horarios"><span aria-hidden="true">◷</span> Horarios</button>
+        <button class="admin-nav-link" type="button" data-view-target="cierres"><span aria-hidden="true">▣</span> Cierres especiales</button>
+        <button class="admin-nav-link" type="button" data-view-target="reglas"><span aria-hidden="true">⚙</span> Reglas de reserva</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <span class="secure-dot" aria-hidden="true"></span>
+        <span>Sesión protegida</span>
+        <a href="/" aria-label="Volver a la web pública">Ver web ↗</a>
+      </div>
+    </aside>
+
+    <main class="admin-main" id="admin-main">
+      <header class="admin-topbar">
+        <div>
+          <p class="eyebrow">CAMiLA GASTROBAR <span aria-hidden="true">·</span> GIJÓN</p>
+          <h1 id="page-title">Sala y mesas</h1>
+        </div>
+        <div class="topbar-actions">
+          <button class="secondary-button" id="sync-loyverse" type="button">Actualizar carta</button>
+          <p class="save-status" id="save-status" aria-live="polite">Cargando configuración…</p>
+          <button class="save-button" id="save-setup" type="button" disabled>Guardar cambios</button>
+        </div>
+      </header>
+
+      <section class="admin-view" id="view-sala" aria-labelledby="page-title">
+        <div class="view-intro">
+          <div>
+            <p class="eyebrow">PLANO DEL RESTAURANTE</p>
+            <h2>Prepara la sala.</h2>
+            <p>Define zonas, capacidad y uniones. La disponibilidad usará estas mesas para evitar solapamientos.</p>
+          </div>
+          <div class="intro-actions">
+            <button class="secondary-button" id="add-area" type="button">Añadir zona</button>
+            <button class="primary-button" id="add-table" type="button">＋ Añadir mesa</button>
+          </div>
+        </div>
+
+        <div class="workspace-grid">
+          <section class="floor-card" aria-label="Plano de la sala">
+            <div class="card-toolbar">
+              <div>
+                <p class="eyebrow">VISTA DE SALA</p>
+                <p class="card-help">Selecciona una mesa para editarla. Usa las flechas cuando la mesa tenga el foco para moverla.</p>
+              </div>
+              <label class="area-filter">Zona
+                <select id="area-filter" name="area-filter"></select>
+              </label>
+            </div>
+            <div class="floor-plan" id="floor-plan" aria-label="Plano interactivo de mesas"></div>
+            <div class="floor-legend"><span><i class="legend-seat"></i> Mesa activa</span><span id="table-summary">0 mesas configuradas</span></div>
+          </section>
+
+          <aside class="detail-card" id="table-details" aria-live="polite">
+            <p class="eyebrow">DETALLES DE MESA</p>
+            <h3 id="selected-table-title">Selecciona una mesa</h3>
+            <p class="muted" id="selected-table-description">Aquí podrás ajustar su zona, capacidad, forma y posición.</p>
+            <button class="secondary-button" id="edit-table" type="button" disabled>Editar mesa</button>
+            <button class="text-button danger-text" id="deactivate-table" type="button" disabled>Desactivar mesa</button>
+            <div class="table-list-wrap">
+              <p class="eyebrow">MESAS CONFIGURADAS</p>
+              <div class="table-list" id="table-list"></div>
+            </div>
+          </aside>
+        </div>
+
+        <section class="combinations-card">
+          <div class="section-toolbar">
+            <div><p class="eyebrow">GRUPOS GRANDES</p><h3>Uniones de mesas</h3><p class="muted">Crea sólo las combinaciones que el equipo pueda montar en la sala.</p></div>
+            <button class="secondary-button" id="add-combination" type="button">＋ Crear unión</button>
+          </div>
+          <div class="combination-list" id="combination-list"></div>
+        </section>
+      </section>
+
+      <section class="admin-view" id="view-horarios" aria-labelledby="page-title" hidden>
+        <div class="view-intro">
+          <div><p class="eyebrow">SERVICIO SEMANAL</p><h2>Marca cuándo abrimos.</h2><p>Los lunes y martes permanecen cerrados mientras no añadas un turno para esos días.</p></div>
+          <button class="primary-button" id="add-hours" type="button">＋ Añadir turno</button>
+        </div>
+        <div class="hours-list" id="hours-list"></div>
+      </section>
+
+      <section class="admin-view" id="view-cierres" aria-labelledby="page-title" hidden>
+        <div class="view-intro">
+          <div><p class="eyebrow">FESTIVOS Y EXCEPCIONES</p><h2>Cierres especiales.</h2><p>Bloquea un día completo o sólo una parte del servicio. Los turnos semanales no se modifican.</p></div>
+          <button class="primary-button" id="add-closure" type="button">＋ Añadir cierre</button>
+        </div>
+        <div class="closures-list" id="closures-list"></div>
+      </section>
+
+      <section class="admin-view" id="view-reglas" aria-labelledby="page-title" hidden>
+        <div class="view-intro"><div><p class="eyebrow">POLÍTICAS DE RESERVA</p><h2>Define las reglas.</h2><p>La capacidad real siempre depende de las mesas activas y sus uniones disponibles.</p></div></div>
+        <form class="rules-grid" id="rules-form">
+          <label>Duración de cada reserva (minutos)<input name="default_duration_minutes" type="number" min="15" max="480" required></label>
+          <label>Intervalo entre horas disponibles (minutos)<input name="slot_interval_minutes" type="number" min="5" max="60" required></label>
+          <label>Máximo de comensales online<input name="max_party_size_online" type="number" min="1" max="100" required></label>
+          <label>Antelación mínima (minutos)<input name="min_lead_time_minutes" type="number" min="0" max="10080" required></label>
+          <label>Días máximos para reservar<input name="max_days_in_advance" type="number" min="1" max="365" required></label>
+          <label>Tiempo para confirmar una reserva pendiente (minutos)<input name="pending_hold_minutes" type="number" min="1" max="1440" required></label>
+          <label>Plazo para cancelar antes de la reserva (minutos)<input name="cancellation_cutoff_minutes" type="number" min="0" max="10080" required></label>
+          <label class="check-row"><input name="auto_confirm" type="checkbox"> Confirmar automáticamente si hay capacidad</label>
+        </form>
+        <p class="rules-note">Si desactivas la confirmación automática, el cliente recibirá un enlace para confirmar o cancelar. La mesa queda retenida durante el tiempo indicado.</p>
+      </section>
+
+      <footer class="admin-footer"><span>Camila Gastrobar · Administración</span><span>Los cambios quedan registrados en el historial del sistema.</span></footer>
+    </main>
+  </div>
+
+  <dialog class="editor-dialog" id="table-dialog">
+    <form method="dialog" id="table-form">
+      <div class="dialog-heading"><div><p class="eyebrow">CONFIGURACIÓN</p><h2 id="table-dialog-title">Añadir mesa</h2></div><button class="icon-button" value="cancel" aria-label="Cerrar">×</button></div>
+      <input name="id" type="hidden">
+      <label>Zona<select name="area_id" required></select></label>
+      <div class="form-row"><label>Código<input name="table_code" maxlength="24" required placeholder="M1"></label><label>Nombre visible<input name="display_name" maxlength="60" placeholder="Mesa 1"></label></div>
+      <div class="form-row"><label>Capacidad mínima<input name="min_capacity" type="number" min="1" max="100" required></label><label>Capacidad máxima<input name="max_capacity" type="number" min="1" max="100" required></label></div>
+      <div class="form-row"><label>Forma<select name="shape"><option value="round">Redonda</option><option value="square">Cuadrada</option><option value="rectangle">Rectangular</option><option value="booth">Banco</option></select></label><label>Rotación<input name="rotation" type="number" min="0" max="359" value="0"></label></div>
+      <div class="form-row"><label>Posición horizontal<input name="x" type="number" min="0" max="100" value="50" required></label><label>Posición vertical<input name="y" type="number" min="0" max="100" value="50" required></label></div>
+      <label class="check-row"><input name="active" type="checkbox" checked> Mesa disponible para reservas</label>
+      <div class="dialog-actions"><button class="secondary-button" value="cancel">Cancelar</button><button class="primary-button" id="save-table" type="button">Guardar mesa</button></div>
+    </form>
+  </dialog>
+
+  <dialog class="editor-dialog" id="area-dialog">
+    <form method="dialog" id="area-form">
+      <div class="dialog-heading"><div><p class="eyebrow">PLANO</p><h2>Añadir zona</h2></div><button class="icon-button" value="cancel" aria-label="Cerrar">×</button></div>
+      <label>Nombre de la zona<input name="name" maxlength="60" required placeholder="Terraza"></label>
+      <div class="dialog-actions"><button class="secondary-button" value="cancel">Cancelar</button><button class="primary-button" id="save-area" type="button">Añadir zona</button></div>
+    </form>
+  </dialog>
+
+  <dialog class="editor-dialog" id="combo-dialog">
+    <form method="dialog" id="combo-form">
+      <div class="dialog-heading"><div><p class="eyebrow">GRUPOS GRANDES</p><h2>Crear unión</h2></div><button class="icon-button" value="cancel" aria-label="Cerrar">×</button></div>
+      <label>Nombre de la unión<input name="name" maxlength="60" required placeholder="Mesas 1 + 2"></label>
+      <label>Capacidad total<input name="max_capacity" type="number" min="2" max="100" required></label>
+      <fieldset><legend>Mesas que se pueden unir</legend><div class="checkbox-list" id="combo-table-options"></div></fieldset>
+      <div class="dialog-actions"><button class="secondary-button" value="cancel">Cancelar</button><button class="primary-button" id="save-combo" type="button">Crear unión</button></div>
+    </form>
+  </dialog>
+
+  <dialog class="editor-dialog" id="hours-dialog">
+    <form method="dialog" id="hours-form">
+      <div class="dialog-heading"><div><p class="eyebrow">SERVICIO SEMANAL</p><h2>Añadir turno</h2></div><button class="icon-button" value="cancel" aria-label="Cerrar">×</button></div>
+      <label>Día<select name="weekday" required><option value="0">Domingo</option><option value="1">Lunes</option><option value="2">Martes</option><option value="3">Miércoles</option><option value="4">Jueves</option><option value="5">Viernes</option><option value="6">Sábado</option></select></label>
+      <label>Servicio<input name="service_name" maxlength="40" required placeholder="Comida"></label>
+      <div class="form-row"><label>Abre<input name="opens_at_local" type="time" required></label><label>Cierra<input name="closes_at_local" type="time" required></label></div>
+      <label class="check-row"><input name="active" type="checkbox" checked> Abrir este turno</label>
+      <div class="dialog-actions"><button class="secondary-button" value="cancel">Cancelar</button><button class="primary-button" id="save-hours" type="button">Añadir turno</button></div>
+    </form>
+  </dialog>
+
+  <dialog class="editor-dialog" id="closure-dialog">
+    <form method="dialog" id="closure-form">
+      <div class="dialog-heading"><div><p class="eyebrow">EXCEPCIÓN DE CALENDARIO</p><h2>Añadir cierre</h2></div><button class="icon-button" value="cancel" aria-label="Cerrar">×</button></div>
+      <label>Fecha<input name="closure_date_local" type="date" required></label>
+      <label class="check-row"><input name="all_day" type="checkbox" checked> Cerrar todo el día</label>
+      <div class="form-row closure-times" hidden><label>Desde<input name="starts_at_local" type="time"></label><label>Hasta<input name="ends_at_local" type="time"></label></div>
+      <label>Motivo<input name="reason" maxlength="180" placeholder="Festivo, evento privado…"></label>
+      <div class="dialog-actions"><button class="secondary-button" value="cancel">Cancelar</button><button class="primary-button" id="save-closure" type="button">Añadir cierre</button></div>
+    </form>
+  </dialog>
+
+  <script type="module" src="/assets/admin.js"></script>
+</body>
+</html>

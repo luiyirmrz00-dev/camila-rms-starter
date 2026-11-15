@@ -1,0 +1,64 @@
+
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "camila-gastrobar-rms",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-11",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "APP_ENV": "production",
+    "RESTAURANT_TIMEZONE": "Europe/Madrid",
+    "CURRENCY": "EUR"
+  },
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": [
+      "/admin",
+      "/admin/*",
+      "/api/*",
+      "/webhooks/*"
+    ]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "camila-rms-db",
+      "database_id": "aefa1fa9-9d0c-4e98-9ffd-ac06462b11d4",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "camila-rms-media"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "EVENTS_QUEUE",
+        "queue": "camila-rms-events"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "camila-rms-events",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 5,
+        "dead_letter_queue": "camila-rms-events-dlq"
+      }
+    ]
+  },
+  "triggers": {
+    "crons": [
+      "*/5 * * * *"
+    ]
+  }
+}
