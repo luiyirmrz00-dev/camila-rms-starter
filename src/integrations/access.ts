@@ -133,7 +133,7 @@ export async function requireAdmin(
     FROM staff_users
     WHERE restaurant_id = ? AND access_email = ? COLLATE NOCASE AND is_active = 1
     LIMIT 1
-  `).bind("camila-gastrobar", claims.email, claims.sub).first<{
+  `).bind("camila-gastrobar", claims.email).first<{
     id: string;
     access_email: string;
     display_name: string;
