@@ -16,7 +16,8 @@
     "ACCESS_TEAM_DOMAIN": "luiyis-security.cloudflareaccess.com",
     "APP_ENV": "production",
     "RESTAURANT_TIMEZONE": "Europe/Madrid",
-    "CURRENCY": "EUR"
+    "CURRENCY": "EUR",
+    "LOYVERSE_STORE_ID": "58733c51-7e8a-4adb-b92c-069ec15bd716"
   },
   "assets": {
     "directory": "./public",
