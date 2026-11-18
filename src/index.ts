@@ -159,8 +159,9 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) {
+      const isBootstrapPage = url.pathname === "/admin/bootstrap" || url.pathname === "/admin/bootstrap.html";
       try {
-        if (url.pathname === "/admin/bootstrap.html") await requireBootstrapOwner(request, env);
+        if (isBootstrapPage) await requireBootstrapOwner(request, env);
         else {
           try {
             await requireAdmin(request, env);
@@ -168,7 +169,7 @@ export default {
             if (error instanceof AdminAuthError && error.status === 403) {
               try {
                 await requireBootstrapOwner(request, env);
-                return Response.redirect(new URL("/admin/bootstrap.html", url).toString(), 302);
+                return Response.redirect(new URL("/admin/bootstrap", url).toString(), 302);
               } catch {
                 // Preserve the original admin authorization error for non-bootstrap users.
               }
