@@ -1,7 +1,7 @@
 
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "camila-gastrobar-rms",
+  "name": "camila-rms-starter",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-11",
   "compatibility_flags": [
@@ -10,7 +10,10 @@
   "observability": {
     "enabled": true
   },
+  "keep_vars": true,
   "vars": {
+    "ACCESS_AUD": "ae426ba5b98a86d07ecf58ce97b08df61bf729feb8fc660f45071af45d716fce",
+    "ACCESS_TEAM_DOMAIN": "luiyis-security.cloudflareaccess.com",
     "APP_ENV": "production",
     "RESTAURANT_TIMEZONE": "Europe/Madrid",
     "CURRENCY": "EUR"
