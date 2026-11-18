@@ -114,8 +114,11 @@ function normalizeId(value: unknown, prefix: string): string {
 
 function normalizeBoolean(value: unknown, fallback = true): number {
   if (value == null) return fallback ? 1 : 0;
-  if (typeof value !== "boolean") return fail("El estado debe ser verdadero o falso.");
-  return value ? 1 : 0;
+  if (typeof value === "boolean") return value ? 1 : 0;
+  // D1 returns SQLite booleans as 0/1 numbers. The admin form resends its
+  // loaded state, so accept those persisted values as well as JSON booleans.
+  if (value === 0 || value === 1) return value;
+  return fail("El estado debe ser verdadero o falso.");
 }
 
 function normalizeArray<T>(value: unknown, field: string, max = 100): T[] {
