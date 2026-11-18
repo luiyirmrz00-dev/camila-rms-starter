@@ -47,11 +47,18 @@ function renderMenu(rows, currency = 'EUR') {
     ? euro
     : new Intl.NumberFormat('es-ES', { style: 'currency', currency });
   const categories = new Map();
+  const sectionDefinitions = [
+    { id: 'drinks', name: 'Bebidas' },
+    { id: 'starters', name: 'Entrantes' },
+    { id: 'food', name: 'Comida' },
+    { id: 'desserts', name: 'Postres' }
+  ];
 
   for (const row of rows) {
     const key = row.category_id ?? 'uncategorized';
     if (!categories.has(key)) {
       categories.set(key, {
+        section: sectionDefinitions.some(section => section.id === row.menu_section) ? row.menu_section : 'food',
         name: row.category_name ?? 'Otros',
         items: new Map()
       });
@@ -76,56 +83,67 @@ function renderMenu(rows, currency = 'EUR') {
 
   const entries = [...categories.entries()].map(([id, category], index) => ({
     id: `category-${slug(category.name)}-${index + 1}`,
+    section: category.section,
     name: category.name,
     items: [...category.items.values()]
   }));
 
-  nav.innerHTML = entries.map(category =>
-    `<a href="#${category.id}">${escapeHtml(category.name)}</a>`
+  const groups = sectionDefinitions.map(section => ({
+    ...section,
+    categories: entries.filter(category => category.section === section.id)
+  })).filter(section => section.categories.length);
+
+  nav.innerHTML = groups.map(section =>
+    `<a href="#menu-${section.id}">${escapeHtml(section.name)}</a>`
   ).join('');
 
-  content.innerHTML = entries.map(category => {
-    const items = category.items.map(item => {
-      const searchText = normalize([
-        category.name,
-        item.name,
-        item.description,
-        ...item.tags,
-        ...item.variants.map(variant => variant.variant_name)
-      ].join(' '));
-      const price = item.variants.length === 1 && item.variants[0].price_minor != null
-        ? `<span class="item-price">${formatter.format(item.variants[0].price_minor / 100)}</span>`
-        : '';
-      const variants = item.variants.length > 1
-        ? `<div class="item-variants">${item.variants.map(variant => `
-            <div class="variant-row">
-              <span class="variant-name">${escapeHtml(variant.variant_name)}</span>
-              <span class="variant-price">${variant.price_minor == null ? '' : formatter.format(variant.price_minor / 100)}</span>
-            </div>`).join('')}
-          </div>`
-        : '';
-      const description = item.description
-        ? `<p class="item-description">${escapeHtml(item.description)}</p>`
-        : '';
-      const tags = [
-        ...(item.featured ? ['Destacado'] : []),
-        ...item.tags
-      ];
-      const tagMarkup = tags.length
-        ? `<div class="item-tags">${tags.map((tag, index) => `<span class="item-tag${index === 0 && item.featured ? ' item-tag-featured' : ''}">${escapeHtml(tag)}</span>`).join('')}</div>`
-        : '';
+  content.innerHTML = groups.map(section => `
+    <section class="menu-category" id="menu-${section.id}" data-menu-section="${section.id}">
+      <div class="category-heading"><h3>${escapeHtml(section.name)}</h3><span class="category-count"></span></div>
+      ${section.categories.map(category => {
+        const items = category.items.map(item => {
+          const searchText = normalize([
+            section.name,
+            category.name,
+            item.name,
+            item.description,
+            ...item.tags,
+            ...item.variants.map(variant => variant.variant_name)
+          ].join(' '));
+          const price = item.variants.length === 1 && item.variants[0].price_minor != null
+            ? `<span class="item-price">${formatter.format(item.variants[0].price_minor / 100)}</span>`
+            : '';
+          const variants = item.variants.length > 1
+            ? `<div class="item-variants">${item.variants.map(variant => `
+                <div class="variant-row">
+                  <span class="variant-name">${escapeHtml(variant.variant_name)}</span>
+                  <span class="variant-price">${variant.price_minor == null ? '' : formatter.format(variant.price_minor / 100)}</span>
+                </div>`).join('')}
+              </div>`
+            : '';
+          const description = item.description
+            ? `<p class="item-description">${escapeHtml(item.description)}</p>`
+            : '';
+          const tags = [
+            ...(item.featured ? ['Destacado'] : []),
+            ...item.tags
+          ];
+          const tagMarkup = tags.length
+            ? `<div class="item-tags">${tags.map((tag, index) => `<span class="item-tag${index === 0 && item.featured ? ' item-tag-featured' : ''}">${escapeHtml(tag)}</span>`).join('')}</div>`
+            : '';
 
-      return `<article class="menu-item" data-search="${escapeHtml(searchText)}">
-        <div class="item-head"><h4 class="item-name">${escapeHtml(item.name)}</h4>${price}</div>
-        ${variants}${description}${tagMarkup}
-      </article>`;
-    }).join('');
+          return `<article class="menu-item" data-search="${escapeHtml(searchText)}">
+            <div class="item-head"><h5 class="item-name">${escapeHtml(item.name)}</h5>${price}</div>
+            ${variants}${description}${tagMarkup}
+          </article>`;
+        }).join('');
 
-    return `<section class="menu-category" id="${category.id}" data-category="${escapeHtml(normalize(category.name))}">
-      <div class="category-heading"><h3>${escapeHtml(category.name)}</h3><span class="category-count"></span></div>
-      <div class="menu-grid">${items}</div>
-    </section>`;
-  }).join('');
+        return `<section class="menu-subcategory" id="${category.id}" data-category="${escapeHtml(normalize(category.name))}">
+          <div class="subcategory-heading"><h4>${escapeHtml(category.name)}</h4><span class="category-count"></span></div>
+          <div class="menu-grid">${items}</div>
+        </section>`;
+      }).join('')}
+    </section>`).join('');
 
   filterMenu();
 }
@@ -134,18 +152,26 @@ function filterMenu() {
   const query = normalize(search.value.trim());
   let visibleCount = 0;
 
-  for (const category of content.querySelectorAll('.menu-category')) {
-    let categoryCount = 0;
-    for (const item of category.querySelectorAll('.menu-item')) {
-      const visible = !query || item.dataset.search.includes(query);
-      item.hidden = !visible;
-      if (visible) categoryCount += 1;
+  let visibleSections = 0;
+  for (const section of content.querySelectorAll('.menu-category')) {
+    let sectionCount = 0;
+    for (const category of section.querySelectorAll('.menu-subcategory')) {
+      let categoryCount = 0;
+      for (const item of category.querySelectorAll('.menu-item')) {
+        const visible = !query || item.dataset.search.includes(query);
+        item.hidden = !visible;
+        if (visible) categoryCount += 1;
+      }
+      category.hidden = categoryCount === 0;
+      category.querySelector('.category-count').textContent = categoryCount ? `${categoryCount}` : '';
+      sectionCount += categoryCount;
     }
-    category.hidden = categoryCount === 0;
-    category.querySelector('.category-count').textContent = categoryCount ? `${categoryCount}` : '';
-    const categoryLink = [...nav.querySelectorAll('a')].find(link => link.hash === `#${category.id}`);
-    if (categoryLink) categoryLink.hidden = categoryCount === 0;
-    visibleCount += categoryCount;
+    section.hidden = sectionCount === 0;
+    section.querySelector('.category-count').textContent = sectionCount ? `${sectionCount}` : '';
+    const sectionLink = [...nav.querySelectorAll('a')].find(link => link.hash === `#${section.id}`);
+    if (sectionLink) sectionLink.hidden = sectionCount === 0;
+    if (sectionCount) visibleSections += 1;
+    visibleCount += sectionCount;
   }
 
   const noResults = query.length > 0 && visibleCount === 0;
@@ -154,7 +180,7 @@ function filterMenu() {
   nav.hidden = noResults;
   count.textContent = query
     ? `${visibleCount} ${visibleCount === 1 ? 'resultado' : 'resultados'}`
-    : `${visibleCount} productos · ${content.querySelectorAll('.menu-category').length} categorías`;
+    : `${visibleCount} productos · ${visibleSections} secciones`;
 }
 
 function syncSearchUrl() {

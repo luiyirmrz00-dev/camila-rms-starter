@@ -21,6 +21,22 @@ interface LoyverseCategory {
   deleted_at?: string | null;
 }
 
+type PublicMenuSection = "drinks" | "starters" | "food" | "desserts";
+
+function classifyMenuSection(name: string): PublicMenuSection {
+  const normalized = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLocaleLowerCase("es");
+  if (["postre", "postres", "dulce", "dulces"].includes(normalized)) return "desserts";
+  if (["pincho", "pinchos", "entrante", "entrantes", "aperitivo", "aperitivos", "extra", "extras"].includes(normalized)) return "starters";
+  if ([
+    "bebida", "bebidas", "brandy", "brandys", "cafe", "cafes", "cerveza", "cervezas",
+    "cocktail", "cocktails", "coctel", "cocteles", "ginebra", "ginebras", "mezcal", "mezcales",
+    "licores", "otros licores", "refrescos", "refrescos y h2o", "ron", "rones", "sidra", "sidras",
+    "tequila", "tequilas", "vermouth", "vino x botella", "vinos chateo", "vodka", "vodkas",
+    "whiskey", "whiskeys", "whiskies", "destilados"
+  ].includes(normalized)) return "drinks";
+  return "food";
+}
+
 interface LoyverseStorePrice {
   store_id: string;
   pricing_type?: "FIXED" | "VARIABLE";
@@ -181,15 +197,15 @@ export async function syncCatalog(env: Env, storeId: string, updatedAtMin?: stri
   // Categories are upserted first so item foreign keys are valid.
   const categoryStatements = categories.map(category => env.DB.prepare(`
     INSERT INTO menu_categories
-      (id, restaurant_id, loyverse_category_id, name, sort_order, active, last_synced_at)
-    VALUES (?, ?, ?, ?, 0, ?, ?)
+      (id, restaurant_id, loyverse_category_id, name, sort_order, active, last_synced_at, public_section)
+    VALUES (?, ?, ?, ?, 0, ?, ?, ?)
     ON CONFLICT(loyverse_category_id) DO UPDATE SET
       name = excluded.name,
       active = excluded.active,
       last_synced_at = excluded.last_synced_at
   `).bind(
     categoryId(category.id), RESTAURANT_ID, category.id, category.name,
-    category.deleted_at ? 0 : 1, now
+    category.deleted_at ? 0 : 1, now, classifyMenuSection(category.name)
   ));
   for (const batch of chunks(categoryStatements, 50)) await env.DB.batch(batch);
 

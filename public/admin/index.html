@@ -18,6 +18,7 @@
         <button class="admin-nav-link" type="button" data-view-target="horarios"><span aria-hidden="true">◷</span> Horarios</button>
         <button class="admin-nav-link" type="button" data-view-target="cierres"><span aria-hidden="true">▣</span> Calendario especial</button>
         <button class="admin-nav-link" type="button" data-view-target="reglas"><span aria-hidden="true">⚙</span> Reglas de reserva</button>
+        <button class="admin-nav-link" type="button" data-view-target="carta"><span aria-hidden="true">▤</span> Carta</button>
       </nav>
       <div class="sidebar-bottom">
         <span class="secure-dot" aria-hidden="true"></span>
@@ -121,6 +122,16 @@
           <label class="check-row"><input name="auto_confirm" type="checkbox"> Confirmar automáticamente si hay capacidad</label>
         </form>
         <p class="rules-note">Si desactivas la confirmación automática, el cliente recibirá un enlace para confirmar o cancelar. La mesa queda retenida durante el tiempo indicado.</p>
+      </section>
+
+      <section class="admin-view" id="view-carta" aria-labelledby="page-title" hidden>
+        <div class="view-intro">
+          <div><p class="eyebrow">PRESENTACIÓN PÚBLICA</p><h2>Organiza la carta.</h2><p>Agrupa las categorías de Loyverse en secciones claras. Los productos conservan su categoría original y los cambios de inventario se sincronizan desde Loyverse.</p></div>
+        </div>
+        <div class="catalog-section-card">
+          <div class="catalog-section-heading"><div><h3>Secciones del menú</h3><p>Elige dónde aparecerá cada categoría en la web pública.</p></div><span class="catalog-section-count" id="catalog-category-count"></span></div>
+          <div class="catalog-category-list" id="catalog-category-list"></div>
+        </div>
       </section>
 
       <footer class="admin-footer"><span>Camila Gastrobar · Administración</span><span>Los cambios quedan registrados en el historial del sistema.</span></footer>

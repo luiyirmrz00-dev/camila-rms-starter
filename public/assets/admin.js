@@ -6,6 +6,7 @@ const state = {
   opening_hours: [],
   special_openings: [],
   closures: [],
+  menu_categories: [],
   rules: null
 };
 let selectedTableId = null;
@@ -52,7 +53,7 @@ async function requestJson(url, options = {}) {
 }
 
 function openView(name) {
-  const labels = { sala: 'Sala y mesas', horarios: 'Horarios', cierres: 'Calendario especial', reglas: 'Reglas de reserva' };
+  const labels = { sala: 'Sala y mesas', horarios: 'Horarios', cierres: 'Calendario especial', reglas: 'Reglas de reserva', carta: 'Carta' };
   for (const section of document.querySelectorAll('.admin-view')) section.hidden = section.id !== `view-${name}`;
   for (const button of document.querySelectorAll('[data-view-target]')) {
     const active = button.dataset.viewTarget === name;
@@ -365,6 +366,26 @@ function renderClosures() {
   }));
 }
 
+function renderCatalogCategories() {
+  const node = document.querySelector('#catalog-category-list');
+  const count = document.querySelector('#catalog-category-count');
+  const labels = { drinks: 'Bebidas', starters: 'Entrantes', food: 'Comida', desserts: 'Postres' };
+  count.textContent = `${state.menu_categories.length} categorías`;
+  node.innerHTML = state.menu_categories.map(category => `
+    <label class="catalog-category-row">
+      <span class="catalog-category-name"><strong>${escapeHtml(category.name)}</strong><small>${Number(category.product_count) || 0} productos activos</small></span>
+      <span class="catalog-category-field"><span>Sección pública</span><select data-menu-category="${escapeHtml(category.id)}" aria-label="Sección pública de ${escapeHtml(category.name)}">
+        ${Object.entries(labels).map(([value, label]) => `<option value="${value}"${category.public_section === value ? ' selected' : ''}>${label}</option>`).join('')}
+      </select></span>
+    </label>`).join('') || '<p class="muted list-empty">Aún no hay categorías. Pulsa «Actualizar carta» para sincronizarlas desde Loyverse.</p>';
+  node.querySelectorAll('[data-menu-category]').forEach(select => select.addEventListener('change', () => {
+    const category = state.menu_categories.find(item => item.id === select.dataset.menuCategory);
+    if (!category) return;
+    category.public_section = select.value;
+    setDirty();
+  }));
+}
+
 function fillRules() {
   if (!state.rules) return;
   const form = document.querySelector('#rules-form');
@@ -386,6 +407,7 @@ function refresh() {
   renderCombinations();
   renderHours();
   renderClosures();
+  renderCatalogCategories();
   fillRules();
 }
 
@@ -529,8 +551,15 @@ async function syncLoyverse() {
   try {
     const result = await requestJson('/api/admin/integrations/loyverse/sync', { method: 'POST' });
     statusNode.textContent = `${result.items} productos consultados · carta actualizada`;
-    statusNode.classList.remove('is-error', 'is-dirty');
-    await refreshPublicMenuStatus();
+    statusNode.classList.remove('is-error');
+    if (!dirty) {
+      const setup = await requestJson('/api/admin/setup');
+      state.menu_categories = setup.menu_categories ?? [];
+      renderCatalogCategories();
+      await refreshPublicMenuStatus();
+    } else {
+      statusNode.textContent += ' · Guarda tus cambios de administración.';
+    }
   } catch (error) {
     statusNode.textContent = error.message;
     statusNode.classList.add('is-error');
@@ -669,5 +698,5 @@ window.addEventListener('keydown', event => {
   renderTables();
 });
 const initialView = window.location.hash.slice(1);
-openView(['sala', 'horarios', 'cierres', 'reglas'].includes(initialView) ? initialView : 'sala');
+openView(['sala', 'horarios', 'cierres', 'reglas', 'carta'].includes(initialView) ? initialView : 'sala');
 loadSetup();

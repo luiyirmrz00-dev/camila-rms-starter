@@ -5,6 +5,7 @@ const RESTAURANT_ID = "camila-gastrobar";
 const TABLE_SHAPES = new Set(["round", "square", "rectangle", "booth"]);
 const FLOOR_ELEMENT_KINDS = new Set(["wall", "bar", "entrance", "window", "column"]);
 const TABLE_ROTATIONS = new Set([0, 90, 180, 270]);
+const PUBLIC_MENU_SECTIONS = new Set(["drinks", "starters", "food", "desserts"]);
 
 interface SetupInput {
   areas?: Array<{ id?: string; name: string; sort_order?: number; active?: boolean }>;
@@ -55,6 +56,7 @@ interface SetupInput {
     opens_at_local: string;
     closes_at_local: string;
   }>;
+  menu_categories?: Array<{ id: string; public_section: "drinks" | "starters" | "food" | "desserts" }>;
   rules?: {
     default_duration_minutes: number;
     slot_interval_minutes: number;
@@ -228,6 +230,12 @@ function validateSetup(value: unknown): SetupInput {
     };
   });
 
+  const menuCategories = normalizeArray<NonNullable<SetupInput["menu_categories"]>[number]>(input.menu_categories, "menu_categories", 500).map(category => {
+    const id = requireString(category.id, "La categoría de carta", 120);
+    if (!PUBLIC_MENU_SECTIONS.has(category.public_section)) fail("El grupo de carta seleccionado no es válido.");
+    return { id, public_section: category.public_section };
+  });
+
   let rules = input.rules;
   if (rules != null) {
     if (!isObject(rules)) fail("Las reglas de reserva deben ser un objeto.");
@@ -243,7 +251,7 @@ function validateSetup(value: unknown): SetupInput {
     };
   }
 
-  return { areas, tables, floor_elements: floorElements, combinations, opening_hours: openingHours, closures, special_openings: specialOpenings, rules };
+  return { areas, tables, floor_elements: floorElements, combinations, opening_hours: openingHours, closures, special_openings: specialOpenings, menu_categories: menuCategories, rules };
 }
 
 function audit(env: Env, staffId: string, action: string, entityType: string, entityId: string | null, after: unknown): D1PreparedStatement {
@@ -254,7 +262,7 @@ function audit(env: Env, staffId: string, action: string, entityType: string, en
 }
 
 async function getSetup(env: Env): Promise<Record<string, unknown>> {
-  const [areas, tables, floorElements, combinations, members, hours, closures, specialOpenings, rules] = await Promise.all([
+  const [areas, tables, floorElements, combinations, members, hours, closures, specialOpenings, menuCategories, rules] = await Promise.all([
     env.DB.prepare(`SELECT id, name, sort_order, active FROM dining_areas WHERE restaurant_id = ? ORDER BY sort_order, name`).bind(RESTAURANT_ID).all(),
     env.DB.prepare(`SELECT id, area_id, table_code, display_name, min_capacity, max_capacity, shape, x, y, rotation, active, sort_order FROM dining_tables WHERE restaurant_id = ? ORDER BY sort_order, table_code`).bind(RESTAURANT_ID).all(),
     env.DB.prepare(`SELECT id, area_id, kind, label, x, y, width, height FROM dining_floor_elements WHERE restaurant_id = ? ORDER BY rowid`).bind(RESTAURANT_ID).all(),
@@ -263,6 +271,7 @@ async function getSetup(env: Env): Promise<Record<string, unknown>> {
     env.DB.prepare(`SELECT id, weekday, service_name, opens_at_local, closes_at_local, active FROM opening_hours WHERE restaurant_id = ? ORDER BY weekday, opens_at_local`).bind(RESTAURANT_ID).all(),
     env.DB.prepare(`SELECT id, closure_date_local, starts_at_local, ends_at_local, reason FROM restaurant_closures WHERE restaurant_id = ? ORDER BY closure_date_local, starts_at_local`).bind(RESTAURANT_ID).all(),
     env.DB.prepare(`SELECT id, opening_date_local, service_name, opens_at_local, closes_at_local FROM restaurant_special_openings WHERE restaurant_id = ? ORDER BY opening_date_local, opens_at_local`).bind(RESTAURANT_ID).all(),
+    env.DB.prepare(`SELECT c.id, c.name, c.public_section, COUNT(DISTINCT i.id) AS product_count FROM menu_categories c LEFT JOIN catalog_items i ON i.category_id = c.id AND i.active = 1 WHERE c.restaurant_id = ? AND c.active = 1 GROUP BY c.id ORDER BY c.sort_order, c.name`).bind(RESTAURANT_ID).all(),
     env.DB.prepare(`SELECT default_duration_minutes, slot_interval_minutes, max_party_size_online, min_lead_time_minutes, max_days_in_advance, auto_confirm, pending_hold_minutes, cancellation_cutoff_minutes FROM reservation_rules WHERE restaurant_id = ? LIMIT 1`).bind(RESTAURANT_ID).first()
   ]);
   const tableIdsByCombo = new Map<string, string[]>();
@@ -279,6 +288,7 @@ async function getSetup(env: Env): Promise<Record<string, unknown>> {
     opening_hours: hours.results,
     closures: closures.results,
     special_openings: specialOpenings.results,
+    menu_categories: menuCategories.results,
     rules
   };
 }
@@ -402,6 +412,12 @@ export async function handleAdminSetupRoute(request: Request, env: Env): Promise
         WHERE restaurant_special_openings.restaurant_id = excluded.restaurant_id
       `).bind(opening.id, RESTAURANT_ID, opening.opening_date_local, opening.service_name, opening.opens_at_local, opening.closes_at_local));
     }
+
+    const menuCategories = setup.menu_categories ?? [];
+    for (const category of menuCategories) {
+      statements.push(env.DB.prepare(`UPDATE menu_categories SET public_section = ? WHERE id = ? AND restaurant_id = ?`)
+        .bind(category.public_section, category.id, RESTAURANT_ID));
+    }
     const specialOpeningIds = specialOpenings.map(opening => opening.id);
     if (specialOpeningIds.length) {
       statements.push(env.DB.prepare(`DELETE FROM restaurant_special_openings WHERE restaurant_id = ? AND id NOT IN (${specialOpeningIds.map(() => "?").join(",")})`).bind(RESTAURANT_ID, ...specialOpeningIds));
@@ -454,6 +470,7 @@ export async function handleAdminSetupRoute(request: Request, env: Env): Promise
       opening_hours: setup.opening_hours?.length ?? 0,
       closures: setup.closures?.length ?? 0,
       special_openings: setup.special_openings?.length ?? 0,
+      menu_categories: setup.menu_categories?.length ?? 0,
       rules: Boolean(setup.rules)
     }));
     await env.DB.batch(statements);

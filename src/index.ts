@@ -75,6 +75,7 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
         c.id AS category_id,
         c.name AS category_name,
         c.sort_order AS category_sort_order,
+        c.public_section AS menu_section,
         i.id AS item_id,
         i.name AS item_name,
         COALESCE(p.public_description, i.description, '') AS description,
