@@ -3,6 +3,8 @@ import type { Env } from "./index";
 
 const RESTAURANT_ID = "camila-gastrobar";
 const TABLE_SHAPES = new Set(["round", "square", "rectangle", "booth"]);
+const FLOOR_ELEMENT_KINDS = new Set(["wall", "bar", "entrance", "window", "column"]);
+const TABLE_ROTATIONS = new Set([0, 90, 180, 270]);
 
 interface SetupInput {
   areas?: Array<{ id?: string; name: string; sort_order?: number; active?: boolean }>;
@@ -20,6 +22,16 @@ interface SetupInput {
     active?: boolean;
     sort_order?: number;
   }>;
+  floor_elements?: Array<{
+    id?: string;
+    area_id: string;
+    kind: "wall" | "bar" | "entrance" | "window" | "column";
+    label?: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  }>;
   combinations?: Array<{ id?: string; name: string; max_capacity: number; active?: boolean; table_ids: string[] }>;
   opening_hours?: Array<{
     id?: string;
@@ -35,6 +47,13 @@ interface SetupInput {
     starts_at_local?: string | null;
     ends_at_local?: string | null;
     reason?: string | null;
+  }>;
+  special_openings?: Array<{
+    id?: string;
+    opening_date_local: string;
+    service_name: string;
+    opens_at_local: string;
+    closes_at_local: string;
   }>;
   rules?: {
     default_duration_minutes: number;
@@ -128,16 +147,33 @@ function validateSetup(value: unknown): SetupInput {
     shape: table.shape,
     x: Number(table.x),
     y: Number(table.y),
-    rotation: optionalNumber(table.rotation, 0, "La rotación", 0, 359),
+    rotation: optionalNumber(table.rotation, 0, "La rotación", 0, 270),
     active: Boolean(normalizeBoolean(table.active)),
     sort_order: optionalNumber(table.sort_order, 0, "El orden de mesa", 0, 999)
   }));
   if (tables.some(table => table.max_capacity < table.min_capacity)) fail("La capacidad máxima debe ser igual o mayor que la mínima.");
   if (tables.some(table => !TABLE_SHAPES.has(table.shape))) fail("La forma de mesa no es válida.");
+  if (tables.some(table => !TABLE_ROTATIONS.has(table.rotation))) fail("La rotación debe ser 0°, 90°, 180° o 270°.");
   if (tables.some(table => !Number.isFinite(table.x) || table.x < 0 || table.x > 100 || !Number.isFinite(table.y) || table.y < 0 || table.y > 100)) {
     fail("La posición de cada mesa debe estar entre 0 y 100.");
   }
   if (areas.length && tables.some(table => !knownAreas.has(table.area_id))) fail("Cada mesa debe pertenecer a una zona incluida en la configuración.");
+
+  const floorElements = normalizeArray<NonNullable<SetupInput["floor_elements"]>[number]>(input.floor_elements, "floor_elements", 100).map(element => ({
+    id: normalizeId(element.id, "floor"),
+    area_id: requireString(element.area_id, "La zona del elemento", 120),
+    kind: element.kind,
+    label: typeof element.label === "string" ? element.label.trim().slice(0, 60) : "",
+    x: Number(element.x),
+    y: Number(element.y),
+    width: Number(element.width),
+    height: Number(element.height)
+  }));
+  if (floorElements.some(element => !FLOOR_ELEMENT_KINDS.has(element.kind))) fail("El tipo de elemento del plano no es válido.");
+  if (floorElements.some(element => !Number.isFinite(element.x) || !Number.isFinite(element.y) || !Number.isFinite(element.width) || !Number.isFinite(element.height) || element.x < 0 || element.y < 0 || element.width <= 0 || element.height <= 0 || element.x + element.width > 100 || element.y + element.height > 100)) {
+    fail("La posición y el tamaño de cada elemento deben quedar dentro del plano.");
+  }
+  if (areas.length && floorElements.some(element => !knownAreas.has(element.area_id))) fail("Cada elemento del plano debe pertenecer a una zona incluida en la configuración.");
 
   const knownTables = new Set(tables.map(table => table.id));
   const combinations = normalizeArray<NonNullable<SetupInput["combinations"]>[number]>(input.combinations, "combinations", 100).map(combo => ({
@@ -176,6 +212,19 @@ function validateSetup(value: unknown): SetupInput {
     };
   });
 
+  const specialOpenings = normalizeArray<NonNullable<SetupInput["special_openings"]>[number]>(input.special_openings, "special_openings", 100).map(opening => {
+    const opensAt = localTime(opening.opens_at_local, "La hora de apertura especial");
+    const closesAt = localTime(opening.closes_at_local, "La hora de cierre especial");
+    if (closesAt <= opensAt && closesAt !== "00:00") fail("La hora de cierre especial debe ser posterior a la apertura.");
+    return {
+      id: normalizeId(opening.id, "special-opening"),
+      opening_date_local: localDate(opening.opening_date_local),
+      service_name: requireString(opening.service_name, "El nombre del servicio especial", 40),
+      opens_at_local: opensAt,
+      closes_at_local: closesAt
+    };
+  });
+
   let rules = input.rules;
   if (rules != null) {
     if (!isObject(rules)) fail("Las reglas de reserva deben ser un objeto.");
@@ -191,7 +240,7 @@ function validateSetup(value: unknown): SetupInput {
     };
   }
 
-  return { areas, tables, combinations, opening_hours: openingHours, closures, rules };
+  return { areas, tables, floor_elements: floorElements, combinations, opening_hours: openingHours, closures, special_openings: specialOpenings, rules };
 }
 
 function audit(env: Env, staffId: string, action: string, entityType: string, entityId: string | null, after: unknown): D1PreparedStatement {
@@ -202,13 +251,15 @@ function audit(env: Env, staffId: string, action: string, entityType: string, en
 }
 
 async function getSetup(env: Env): Promise<Record<string, unknown>> {
-  const [areas, tables, combinations, members, hours, closures, rules] = await Promise.all([
+  const [areas, tables, floorElements, combinations, members, hours, closures, specialOpenings, rules] = await Promise.all([
     env.DB.prepare(`SELECT id, name, sort_order, active FROM dining_areas WHERE restaurant_id = ? ORDER BY sort_order, name`).bind(RESTAURANT_ID).all(),
     env.DB.prepare(`SELECT id, area_id, table_code, display_name, min_capacity, max_capacity, shape, x, y, rotation, active, sort_order FROM dining_tables WHERE restaurant_id = ? ORDER BY sort_order, table_code`).bind(RESTAURANT_ID).all(),
+    env.DB.prepare(`SELECT id, area_id, kind, label, x, y, width, height FROM dining_floor_elements WHERE restaurant_id = ? ORDER BY rowid`).bind(RESTAURANT_ID).all(),
     env.DB.prepare(`SELECT id, name, max_capacity, active FROM table_combinations WHERE restaurant_id = ? ORDER BY name`).bind(RESTAURANT_ID).all(),
     env.DB.prepare(`SELECT m.combination_id, m.table_id FROM table_combination_members m JOIN table_combinations c ON c.id = m.combination_id WHERE c.restaurant_id = ?`).bind(RESTAURANT_ID).all<{ combination_id: string; table_id: string }>(),
     env.DB.prepare(`SELECT id, weekday, service_name, opens_at_local, closes_at_local, active FROM opening_hours WHERE restaurant_id = ? ORDER BY weekday, opens_at_local`).bind(RESTAURANT_ID).all(),
     env.DB.prepare(`SELECT id, closure_date_local, starts_at_local, ends_at_local, reason FROM restaurant_closures WHERE restaurant_id = ? ORDER BY closure_date_local, starts_at_local`).bind(RESTAURANT_ID).all(),
+    env.DB.prepare(`SELECT id, opening_date_local, service_name, opens_at_local, closes_at_local FROM restaurant_special_openings WHERE restaurant_id = ? ORDER BY opening_date_local, opens_at_local`).bind(RESTAURANT_ID).all(),
     env.DB.prepare(`SELECT default_duration_minutes, slot_interval_minutes, max_party_size_online, min_lead_time_minutes, max_days_in_advance, auto_confirm, pending_hold_minutes, cancellation_cutoff_minutes FROM reservation_rules WHERE restaurant_id = ? LIMIT 1`).bind(RESTAURANT_ID).first()
   ]);
   const tableIdsByCombo = new Map<string, string[]>();
@@ -220,9 +271,11 @@ async function getSetup(env: Env): Promise<Record<string, unknown>> {
   return {
     areas: areas.results,
     tables: tables.results,
+    floor_elements: floorElements.results,
     combinations: combinations.results.map(combo => ({ ...combo, table_ids: tableIdsByCombo.get(String(combo.id)) ?? [] })),
     opening_hours: hours.results,
     closures: closures.results,
+    special_openings: specialOpenings.results,
     rules
   };
 }
@@ -254,6 +307,22 @@ export async function handleAdminSetupRoute(request: Request, env: Env): Promise
         ON CONFLICT(id) DO UPDATE SET name = excluded.name, sort_order = excluded.sort_order, active = excluded.active
         WHERE dining_areas.restaurant_id = excluded.restaurant_id
       `).bind(area.id, RESTAURANT_ID, area.name, area.sort_order, area.active ? 1 : 0));
+    }
+    for (const element of setup.floor_elements ?? []) {
+      statements.push(env.DB.prepare(`
+        INSERT INTO dining_floor_elements (id, restaurant_id, area_id, kind, label, x, y, width, height)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          area_id = excluded.area_id, kind = excluded.kind, label = excluded.label,
+          x = excluded.x, y = excluded.y, width = excluded.width, height = excluded.height
+        WHERE dining_floor_elements.restaurant_id = excluded.restaurant_id
+      `).bind(element.id, RESTAURANT_ID, element.area_id, element.kind, element.label, element.x, element.y, element.width, element.height));
+    }
+    const floorElementIds = (setup.floor_elements ?? []).map(element => element.id);
+    if (floorElementIds.length) {
+      statements.push(env.DB.prepare(`DELETE FROM dining_floor_elements WHERE restaurant_id = ? AND id NOT IN (${floorElementIds.map(() => "?").join(",")})`).bind(RESTAURANT_ID, ...floorElementIds));
+    } else {
+      statements.push(env.DB.prepare(`DELETE FROM dining_floor_elements WHERE restaurant_id = ?`).bind(RESTAURANT_ID));
     }
     for (const table of setup.tables ?? []) {
       statements.push(env.DB.prepare(`
@@ -319,6 +388,24 @@ export async function handleAdminSetupRoute(request: Request, env: Env): Promise
       statements.push(env.DB.prepare(`DELETE FROM restaurant_closures WHERE restaurant_id = ?`).bind(RESTAURANT_ID));
     }
 
+    const specialOpenings = setup.special_openings ?? [];
+    for (const opening of specialOpenings) {
+      statements.push(env.DB.prepare(`
+        INSERT INTO restaurant_special_openings (id, restaurant_id, opening_date_local, service_name, opens_at_local, closes_at_local)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          opening_date_local = excluded.opening_date_local, service_name = excluded.service_name,
+          opens_at_local = excluded.opens_at_local, closes_at_local = excluded.closes_at_local
+        WHERE restaurant_special_openings.restaurant_id = excluded.restaurant_id
+      `).bind(opening.id, RESTAURANT_ID, opening.opening_date_local, opening.service_name, opening.opens_at_local, opening.closes_at_local));
+    }
+    const specialOpeningIds = specialOpenings.map(opening => opening.id);
+    if (specialOpeningIds.length) {
+      statements.push(env.DB.prepare(`DELETE FROM restaurant_special_openings WHERE restaurant_id = ? AND id NOT IN (${specialOpeningIds.map(() => "?").join(",")})`).bind(RESTAURANT_ID, ...specialOpeningIds));
+    } else {
+      statements.push(env.DB.prepare(`DELETE FROM restaurant_special_openings WHERE restaurant_id = ?`).bind(RESTAURANT_ID));
+    }
+
     const combinations = setup.combinations ?? [];
     const combinationIds = combinations.map(combo => combo.id);
     if (combinationIds.length) {
@@ -359,9 +446,11 @@ export async function handleAdminSetupRoute(request: Request, env: Env): Promise
     statements.push(audit(env, staff.staffId, "update", "restaurant_setup", RESTAURANT_ID, {
       areas: setup.areas?.length ?? 0,
       tables: setup.tables?.length ?? 0,
+      floor_elements: setup.floor_elements?.length ?? 0,
       combinations: setup.combinations?.length ?? 0,
       opening_hours: setup.opening_hours?.length ?? 0,
       closures: setup.closures?.length ?? 0,
+      special_openings: setup.special_openings?.length ?? 0,
       rules: Boolean(setup.rules)
     }));
     await env.DB.batch(statements);

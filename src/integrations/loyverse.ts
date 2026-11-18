@@ -45,12 +45,20 @@ interface LoyverseVariant {
 interface LoyverseItem {
   id: string;
   item_name: string;
+  track_stock?: boolean;
   description?: string | null;
   category_id?: string | null;
   variants?: LoyverseVariant[];
   updated_at?: string | null;
   deleted_at?: string | null;
   image_url?: string | null;
+}
+
+interface LoyverseInventoryLevel {
+  variant_id: string;
+  store_id: string;
+  in_stock: number;
+  updated_at?: string | null;
 }
 
 interface Page<T> {
@@ -87,7 +95,9 @@ async function loyverseGet<T>(env: Env, path: string, extra: Record<string, stri
   if (!response.ok) {
     // Deliberately do not include response bodies or credentials in errors/logs.
     const statusMessage = response.status === 401 || response.status === 403
-      ? "Loyverse rechazó la credencial o sus permisos. Revisa el token."
+      ? path === "/inventory"
+        ? "Loyverse no autorizó consultar el inventario. Vuelve a emitir el token con el permiso INVENTORY_READ y actualiza LOYVERSE_ACCESS_TOKEN en Cloudflare."
+        : "Loyverse rechazó la credencial o sus permisos. Revisa el token."
       : response.status === 429
         ? "Loyverse ha aplicado un límite temporal de solicitudes. Inténtalo de nuevo más tarde."
         : `Loyverse respondió con HTTP ${response.status}.`;
@@ -162,6 +172,7 @@ export async function syncCatalog(env: Env, storeId: string, updatedAtMin?: stri
       ? getAll<LoyverseVariant>(env, "/variants", "variants", { show_deleted: "true", updated_at_min: updatedAtMin })
       : Promise.resolve([] as LoyverseVariant[])
   ]);
+  const inventoryLevels = await getAll<LoyverseInventoryLevel>(env, "/inventory", "inventory_levels");
 
   const now = syncStartedAt;
   const categoryId = (id: string) => `loyverse-category-${id}`;
@@ -208,20 +219,21 @@ export async function syncCatalog(env: Env, storeId: string, updatedAtMin?: stri
     itemStatements.push(env.DB.prepare(`
       INSERT INTO catalog_items
         (id, restaurant_id, loyverse_item_id, category_id, name, description,
-         available_for_sale, active, source_updated_at, last_synced_at, raw_source_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         available_for_sale, active, track_stock, source_updated_at, last_synced_at, raw_source_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(loyverse_item_id) DO UPDATE SET
         category_id = excluded.category_id,
         name = excluded.name,
         description = excluded.description,
         available_for_sale = excluded.available_for_sale,
         active = excluded.active,
+        track_stock = excluded.track_stock,
         source_updated_at = excluded.source_updated_at,
         last_synced_at = excluded.last_synced_at,
         raw_source_json = excluded.raw_source_json
     `).bind(
       itemId(item.id), RESTAURANT_ID, item.id, catId, item.item_name,
-      item.description ?? null, itemAvailable ? 1 : 0, item.deleted_at ? 0 : 1,
+      item.description ?? null, itemAvailable ? 1 : 0, item.deleted_at ? 0 : 1, item.track_stock ? 1 : 0,
       item.updated_at ?? null, now, JSON.stringify(item)
     ));
 
@@ -358,6 +370,30 @@ export async function syncCatalog(env: Env, storeId: string, updatedAtMin?: stri
       `).bind(now, ...itemIdBatch).run();
     }
   }
+
+  const stockByVariant = new Map<string, number>();
+  for (const level of inventoryLevels) {
+    if (level.store_id === storeId && level.variant_id && Number.isFinite(Number(level.in_stock))) {
+      stockByVariant.set(level.variant_id, Number(level.in_stock));
+    }
+  }
+  const storedVariants = await env.DB.prepare(`
+    SELECT v.id, v.loyverse_variant_id, i.track_stock
+    FROM catalog_variants v
+    JOIN catalog_items i ON i.id = v.item_id
+    WHERE i.restaurant_id = ? AND v.store_id = ?
+  `).bind(RESTAURANT_ID, storeId).all<{ id: string; loyverse_variant_id: string; track_stock: number }>();
+  const inventoryStatements = storedVariants.results.map(variant => env.DB.prepare(`
+    UPDATE catalog_variants
+    SET in_stock = ?, last_synced_at = ?
+    WHERE id = ? AND store_id = ?
+  `).bind(
+    variant.track_stock ? Math.max(0, stockByVariant.get(variant.loyverse_variant_id) ?? 0) : null,
+    now,
+    variant.id,
+    storeId
+  ));
+  for (const batch of chunks(inventoryStatements, 50)) await env.DB.batch(batch);
 
   // Update restaurant contact/location details from the selected Loyverse store only when present.
   const addressParts = [store.address, store.postal_code, store.city, store.state, store.country]

@@ -1,16 +1,21 @@
 const state = {
   areas: [],
   tables: [],
+  floor_elements: [],
   combinations: [],
   opening_hours: [],
+  special_openings: [],
   closures: [],
   rules: null
 };
 let selectedTableId = null;
+let selectedFloorElementId = null;
 let dirty = false;
+let drawing = null;
 
 const weekdays = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 const shapeNames = { round: 'Redonda', square: 'Cuadrada', rectangle: 'Rectangular', booth: 'Banco' };
+const floorElementNames = { wall: 'Pared', bar: 'Barra', entrance: 'Acceso', window: 'Ventana', column: 'Columna' };
 const statusNode = document.querySelector('#save-status');
 const saveButton = document.querySelector('#save-setup');
 
@@ -47,7 +52,7 @@ async function requestJson(url, options = {}) {
 }
 
 function openView(name) {
-  const labels = { sala: 'Sala y mesas', horarios: 'Horarios', cierres: 'Cierres especiales', reglas: 'Reglas de reserva' };
+  const labels = { sala: 'Sala y mesas', horarios: 'Horarios', cierres: 'Calendario especial', reglas: 'Reglas de reserva' };
   for (const section of document.querySelectorAll('.admin-view')) section.hidden = section.id !== `view-${name}`;
   for (const button of document.querySelectorAll('[data-view-target]')) {
     const active = button.dataset.viewTarget === name;
@@ -75,14 +80,17 @@ function renderAreas() {
 function renderTables() {
   const filter = currentAreaFilter();
   const tables = state.tables.filter(table => filter === 'all' || table.area_id === filter);
+  const elements = (state.floor_elements || []).filter(element => filter === 'all' || element.area_id === filter);
   const floor = document.querySelector('#floor-plan');
-  floor.innerHTML = tables.map(table => {
+  const elementsMarkup = elements.map(element => `<button class="floor-element floor-${escapeHtml(element.kind)}${selectedFloorElementId === element.id ? ' is-selected' : ''}" type="button" data-floor-element-id="${escapeHtml(element.id)}" aria-label="${escapeHtml(element.label || floorElementNames[element.kind] || 'Elemento del plano')}" style="left:${Number(element.x)}%;top:${Number(element.y)}%;width:${Number(element.width)}%;height:${Number(element.height)}%"><span>${escapeHtml(element.label || floorElementNames[element.kind] || '')}</span></button>`).join('');
+  const tablesMarkup = tables.map(table => {
     const area = state.areas.find(candidate => candidate.id === table.area_id);
     const selected = table.id === selectedTableId;
     return `<button class="table-marker table-${escapeHtml(table.shape)}${selected ? ' is-selected' : ''}${table.active ? '' : ' is-inactive'}" type="button" data-table-id="${escapeHtml(table.id)}" aria-label="${escapeHtml(table.display_name || table.table_code)}, ${table.min_capacity} a ${table.max_capacity} personas, ${escapeHtml(area?.name || 'zona sin nombre')}" style="left:${Number(table.x)}%;top:${Number(table.y)}%;transform:translate(-50%,-50%) rotate(${Number(table.rotation || 0)}deg)">
       <span>${escapeHtml(table.display_name || table.table_code)}</span><small>${table.min_capacity}–${table.max_capacity}</small>
     </button>`;
-  }).join('') || '<p class="floor-empty">Añade mesas para empezar a dibujar el plano.</p>';
+  }).join('');
+  floor.innerHTML = `${elementsMarkup}${tablesMarkup}${tables.length ? '' : '<p class="floor-empty">Añade mesas para empezar a dibujar el plano.</p>'}`;
 
   document.querySelector('#table-summary').textContent = `${state.tables.filter(table => table.active).length} mesas activas · ${state.tables.length} configuradas`;
   const tableList = document.querySelector('#table-list');
@@ -94,6 +102,46 @@ function renderTables() {
   document.querySelectorAll('[data-table-id]').forEach(button => {
     button.addEventListener('click', () => selectTable(button.dataset.tableId));
     if (button.classList.contains('table-marker')) {
+      button.addEventListener('pointerdown', event => {
+        if (document.querySelector('#floor-tool').value !== 'select' || event.button !== 0) return;
+        event.preventDefault();
+        selectedTableId = button.dataset.tableId;
+        selectedFloorElementId = null;
+        renderSelectedTable();
+        document.querySelectorAll('.table-marker').forEach(marker => marker.classList.toggle('is-selected', marker.dataset.tableId === selectedTableId));
+        const table = state.tables.find(candidate => candidate.id === selectedTableId);
+        const floorRect = floor.getBoundingClientRect();
+        const startX = (event.clientX - floorRect.left) / floorRect.width * 100;
+        const startY = (event.clientY - floorRect.top) / floorRect.height * 100;
+        const offsetX = Number(table?.x ?? 50) - startX;
+        const offsetY = Number(table?.y ?? 50) - startY;
+        let moved = false;
+        button.setPointerCapture(event.pointerId);
+        const onMove = moveEvent => {
+          if (moveEvent.pointerId !== event.pointerId) return;
+          const x = Math.max(2, Math.min(98, (moveEvent.clientX - floorRect.left) / floorRect.width * 100 + offsetX));
+          const y = Math.max(2, Math.min(98, (moveEvent.clientY - floorRect.top) / floorRect.height * 100 + offsetY));
+          if (Math.abs(x - startX) > 0.2 || Math.abs(y - startY) > 0.2) moved = true;
+          if (!moved || !table) return;
+          table.x = x;
+          table.y = y;
+          button.style.left = `${x}%`;
+          button.style.top = `${y}%`;
+        };
+        const onEnd = endEvent => {
+          if (endEvent.pointerId !== event.pointerId) return;
+          button.removeEventListener('pointermove', onMove);
+          button.removeEventListener('pointerup', onEnd);
+          button.removeEventListener('pointercancel', onEnd);
+          if (moved) {
+            setDirty();
+            renderTables();
+          }
+        };
+        button.addEventListener('pointermove', onMove);
+        button.addEventListener('pointerup', onEnd);
+        button.addEventListener('pointercancel', onEnd);
+      });
       button.addEventListener('keydown', event => {
         const delta = event.shiftKey ? 5 : 1;
         let { x, y } = state.tables.find(table => table.id === button.dataset.tableId);
@@ -107,6 +155,11 @@ function renderTables() {
       });
     }
   });
+  floor.querySelectorAll('[data-floor-element-id]').forEach(button => button.addEventListener('click', () => {
+    selectedFloorElementId = button.dataset.floorElementId;
+    selectedTableId = null;
+    renderTables();
+  }));
   renderSelectedTable();
 }
 
@@ -116,11 +169,26 @@ function renderSelectedTable() {
   const description = document.querySelector('#selected-table-description');
   const edit = document.querySelector('#edit-table');
   const deactivate = document.querySelector('#deactivate-table');
+  const removeElement = document.querySelector('#remove-floor-element');
+  const rotationControl = document.querySelector('#table-rotation-control');
+  const rotationSelect = document.querySelector('#selected-table-rotation');
+  const element = (state.floor_elements || []).find(candidate => candidate.id === selectedFloorElementId);
+  if (element) {
+    title.textContent = element.label || floorElementNames[element.kind] || 'Elemento del plano';
+    description.textContent = `Elemento dibujado en la zona ${state.areas.find(area => area.id === element.area_id)?.name || 'sin nombre'}.`;
+    edit.disabled = true;
+    deactivate.disabled = true;
+    removeElement.hidden = false;
+    rotationControl.hidden = true;
+    return;
+  }
+  removeElement.hidden = true;
   if (!table) {
     title.textContent = 'Selecciona una mesa';
     description.textContent = 'Aquí podrás ajustar su zona, capacidad, forma y posición.';
     edit.disabled = true;
     deactivate.disabled = true;
+    rotationControl.hidden = true;
     return;
   }
   const area = state.areas.find(candidate => candidate.id === table.area_id);
@@ -129,10 +197,13 @@ function renderSelectedTable() {
   edit.disabled = false;
   deactivate.disabled = false;
   deactivate.textContent = table.active ? 'Desactivar mesa' : 'Reactivar mesa';
+  rotationControl.hidden = false;
+  rotationSelect.value = String(Number(table.rotation || 0));
 }
 
 function selectTable(id) {
   selectedTableId = id;
+  selectedFloorElementId = null;
   renderTables();
 }
 
@@ -143,6 +214,86 @@ function updateTablePosition(id, x, y) {
   table.y = y;
   setDirty();
   renderTables();
+}
+
+function floorPoint(event, rect) {
+  return {
+    x: Math.max(0, Math.min(rect.width, event.clientX - rect.left)),
+    y: Math.max(0, Math.min(rect.height, event.clientY - rect.top))
+  };
+}
+
+function updateDrawingPreview(event) {
+  if (!drawing || event.pointerId !== drawing.pointerId) return;
+  const point = floorPoint(event, drawing.rect);
+  const endX = Math.min(drawing.rect.width, Math.max(0, Math.round(point.x / 34) * 34));
+  const endY = Math.min(drawing.rect.height, Math.max(0, Math.round(point.y / 34) * 34));
+  drawing.currentX = endX;
+  drawing.currentY = endY;
+  const left = Math.min(drawing.startX, endX);
+  const top = Math.min(drawing.startY, endY);
+  const width = Math.max(34, Math.abs(endX - drawing.startX));
+  const height = Math.max(34, Math.abs(endY - drawing.startY));
+  Object.assign(drawing.preview.style, {
+    left: `${left / drawing.rect.width * 100}%`, top: `${top / drawing.rect.height * 100}%`,
+    width: `${Math.min(width, drawing.rect.width - left) / drawing.rect.width * 100}%`,
+    height: `${Math.min(height, drawing.rect.height - top) / drawing.rect.height * 100}%`
+  });
+}
+
+function finishDrawing(event) {
+  if (!drawing || event.pointerId !== drawing.pointerId) return;
+  const activeDrawing = drawing;
+  drawing = null;
+  const point = floorPoint(event, activeDrawing.rect);
+  const endX = Math.min(activeDrawing.rect.width, Math.max(0, Math.round(point.x / 34) * 34));
+  const endY = Math.min(activeDrawing.rect.height, Math.max(0, Math.round(point.y / 34) * 34));
+  const left = Math.min(activeDrawing.startX, endX);
+  const top = Math.min(activeDrawing.startY, endY);
+  const width = Math.min(Math.max(34, Math.abs(endX - activeDrawing.startX)), activeDrawing.rect.width - left);
+  const height = Math.min(Math.max(34, Math.abs(endY - activeDrawing.startY)), activeDrawing.rect.height - top);
+  activeDrawing.preview.remove();
+  const element = {
+    id: newId('floor'), area_id: activeDrawing.areaId, kind: activeDrawing.kind,
+    label: floorElementNames[activeDrawing.kind],
+    x: left / activeDrawing.rect.width * 100, y: top / activeDrawing.rect.height * 100,
+    width: width / activeDrawing.rect.width * 100, height: height / activeDrawing.rect.height * 100
+  };
+  state.floor_elements.push(element);
+  selectedFloorElementId = element.id;
+  selectedTableId = null;
+  setDirty();
+  renderTables();
+}
+
+function cancelDrawing(event) {
+  if (!drawing || event.pointerId !== drawing.pointerId) return;
+  drawing.preview.remove();
+  drawing = null;
+}
+
+function startDrawing(event) {
+  const floor = document.querySelector('#floor-plan');
+  const kind = document.querySelector('#floor-tool').value;
+  if (kind === 'select' || (event.target !== floor && !event.target.classList.contains('floor-empty'))) return;
+  if (event.button !== 0) return;
+  const areaId = currentAreaFilter();
+  if (areaId === 'all') {
+    statusNode.textContent = 'Selecciona una zona antes de dibujar sus elementos.';
+    return;
+  }
+  event.preventDefault();
+  const rect = floor.getBoundingClientRect();
+  const point = floorPoint(event, rect);
+  const grid = 34;
+  const startX = Math.min(rect.width - grid, Math.max(0, Math.round(point.x / grid) * grid));
+  const startY = Math.min(rect.height - grid, Math.max(0, Math.round(point.y / grid) * grid));
+  const preview = document.createElement('div');
+  preview.className = `floor-element floor-${kind} is-drawing`;
+  floor.append(preview);
+  drawing = { kind, areaId, rect, pointerId: event.pointerId, startX, startY, currentX: startX, currentY: startY, preview };
+  floor.setPointerCapture(event.pointerId);
+  updateDrawingPreview(event);
 }
 
 function renderCombinations() {
@@ -190,16 +341,25 @@ function renderHours() {
 
 function renderClosures() {
   const node = document.querySelector('#closures-list');
-  const sorted = [...state.closures].sort((a, b) => a.closure_date_local.localeCompare(b.closure_date_local));
-  node.innerHTML = sorted.map(closure => {
+  const rows = [...state.closures].map(closure => {
     const description = closure.starts_at_local && closure.ends_at_local
       ? `${closure.starts_at_local}–${closure.ends_at_local}`
       : 'Todo el día';
     const date = new Intl.DateTimeFormat('es-ES', { dateStyle: 'long', timeZone: 'Europe/Madrid' }).format(new Date(`${closure.closure_date_local}T12:00:00`));
-    return `<article class="closure-row"><div><strong>${escapeHtml(date)}</strong><p>${escapeHtml(description)}${closure.reason ? ` · ${escapeHtml(closure.reason)}` : ''}</p></div><button class="text-button danger-text" type="button" data-remove-closure="${escapeHtml(closure.id)}">Eliminar</button></article>`;
-  }).join('') || '<p class="muted list-empty">No hay cierres especiales configurados.</p>';
+    return { date: closure.closure_date_local, html: `<article class="closure-row"><div><span class="exception-badge is-closed">Cierre</span><strong>${escapeHtml(date)}</strong><p>${escapeHtml(description)}${closure.reason ? ` · ${escapeHtml(closure.reason)}` : ''}</p></div><button class="text-button danger-text" type="button" data-remove-closure="${escapeHtml(closure.id)}">Eliminar</button></article>` };
+  });
+  rows.push(...(state.special_openings || []).map(opening => {
+    const date = new Intl.DateTimeFormat('es-ES', { dateStyle: 'long', timeZone: 'Europe/Madrid' }).format(new Date(`${opening.opening_date_local}T12:00:00`));
+    return { date: opening.opening_date_local, html: `<article class="closure-row"><div><span class="exception-badge is-open">Apertura</span><strong>${escapeHtml(date)}</strong><p>${escapeHtml(opening.service_name)} · ${escapeHtml(opening.opens_at_local)}–${escapeHtml(opening.closes_at_local)}</p></div><button class="text-button danger-text" type="button" data-remove-special-opening="${escapeHtml(opening.id)}">Eliminar</button></article>` };
+  }));
+  node.innerHTML = rows.sort((a, b) => a.date.localeCompare(b.date)).map(row => row.html).join('') || '<p class="muted list-empty">No hay aperturas ni cierres especiales configurados.</p>';
   node.querySelectorAll('[data-remove-closure]').forEach(button => button.addEventListener('click', () => {
     state.closures = state.closures.filter(closure => closure.id !== button.dataset.removeClosure);
+    setDirty();
+    renderClosures();
+  }));
+  node.querySelectorAll('[data-remove-special-opening]').forEach(button => button.addEventListener('click', () => {
+    state.special_openings = state.special_openings.filter(opening => opening.id !== button.dataset.removeSpecialOpening);
     setDirty();
     renderClosures();
   }));
@@ -237,7 +397,8 @@ function editTable(table) {
     for (const key of ['area_id', 'table_code', 'display_name', 'min_capacity', 'max_capacity', 'shape', 'x', 'y', 'rotation']) form.elements[key].value = table[key] ?? '';
     form.elements.active.checked = Boolean(table.active);
   } else {
-    form.elements.area_id.value = state.areas[0]?.id ?? '';
+    const filteredArea = currentAreaFilter();
+    form.elements.area_id.value = filteredArea !== 'all' ? filteredArea : state.areas[0]?.id ?? '';
     form.elements.table_code.value = `M${state.tables.length + 1}`;
     form.elements.active.checked = true;
   }
@@ -272,6 +433,7 @@ function saveTableFromDialog() {
   if (index === -1) state.tables.push(table);
   else state.tables[index] = table;
   selectedTableId = id;
+  selectedFloorElementId = null;
   document.querySelector('#table-dialog').close();
   setDirty();
   renderTables();
@@ -299,6 +461,27 @@ function saveClosureFromDialog() {
     reason: String(data.get('reason') || '').trim() || null
   });
   document.querySelector('#closure-dialog').close();
+  setDirty();
+  renderClosures();
+}
+
+function saveSpecialOpeningFromDialog() {
+  const form = document.querySelector('#special-opening-form');
+  if (!form.reportValidity()) return;
+  const data = new FormData(form);
+  const opening = {
+    id: newId('special-opening'),
+    opening_date_local: data.get('opening_date_local'),
+    service_name: String(data.get('service_name')).trim(),
+    opens_at_local: data.get('opens_at_local'),
+    closes_at_local: data.get('closes_at_local')
+  };
+  if (opening.closes_at_local <= opening.opens_at_local && opening.closes_at_local !== '00:00') {
+    statusNode.textContent = 'La hora de cierre debe ser posterior a la apertura.';
+    return;
+  }
+  state.special_openings.push(opening);
+  document.querySelector('#special-opening-dialog').close();
   setDirty();
   renderClosures();
 }
@@ -384,6 +567,16 @@ async function loadSetup() {
 
 document.querySelectorAll('[data-view-target]').forEach(button => button.addEventListener('click', () => openView(button.dataset.viewTarget)));
 document.querySelector('#area-filter').addEventListener('change', renderTables);
+document.querySelector('#floor-tool').addEventListener('change', event => {
+  document.querySelector('#floor-plan').classList.toggle('is-drawing-mode', event.target.value !== 'select');
+  document.querySelector('#floor-help').textContent = event.target.value === 'select'
+    ? 'Arrastra las mesas para colocarlas. Elige una herramienta para dibujar paredes, barra, acceso, ventanas o columnas.'
+    : 'Selecciona una zona y arrastra sobre el plano para dibujar el elemento. Haz clic sobre un elemento para eliminarlo.';
+});
+document.querySelector('#floor-plan').addEventListener('pointerdown', startDrawing);
+document.querySelector('#floor-plan').addEventListener('pointermove', updateDrawingPreview);
+document.querySelector('#floor-plan').addEventListener('pointerup', finishDrawing);
+document.querySelector('#floor-plan').addEventListener('pointercancel', cancelDrawing);
 document.querySelector('#save-setup').addEventListener('click', saveSetup);
 document.querySelector('#sync-loyverse').addEventListener('click', syncLoyverse);
 document.querySelector('#add-table').addEventListener('click', () => editTable(null));
@@ -392,6 +585,20 @@ document.querySelector('#deactivate-table').addEventListener('click', () => {
   const table = state.tables.find(candidate => candidate.id === selectedTableId);
   if (!table) return;
   table.active = !table.active;
+  setDirty();
+  renderTables();
+});
+document.querySelector('#selected-table-rotation').addEventListener('change', event => {
+  const table = state.tables.find(candidate => candidate.id === selectedTableId);
+  if (!table) return;
+  table.rotation = Number(event.target.value);
+  setDirty();
+  renderTables();
+});
+document.querySelector('#remove-floor-element').addEventListener('click', () => {
+  if (!selectedFloorElementId) return;
+  state.floor_elements = state.floor_elements.filter(element => element.id !== selectedFloorElementId);
+  selectedFloorElementId = null;
   setDirty();
   renderTables();
 });
@@ -422,6 +629,15 @@ document.querySelector('#add-closure').addEventListener('click', () => {
   document.querySelector('.closure-times').hidden = true;
   document.querySelector('#closure-dialog').showModal();
 });
+document.querySelector('#add-special-opening').addEventListener('click', () => {
+  const form = document.querySelector('#special-opening-form');
+  form.reset();
+  form.elements.service_name.value = 'Servicio especial';
+  form.elements.opens_at_local.value = '12:00';
+  form.elements.closes_at_local.value = '16:00';
+  document.querySelector('#special-opening-dialog').showModal();
+});
+document.querySelector('#save-special-opening').addEventListener('click', saveSpecialOpeningFromDialog);
 document.querySelector('#closure-form [name="all_day"]').addEventListener('change', event => {
   document.querySelector('.closure-times').hidden = event.target.checked;
 });
@@ -442,6 +658,15 @@ window.addEventListener('beforeunload', event => {
   if (!dirty) return;
   event.preventDefault();
   event.returnValue = '';
+});
+window.addEventListener('keydown', event => {
+  if (!selectedFloorElementId || !['Delete', 'Backspace'].includes(event.key)) return;
+  if (event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement || event.target instanceof HTMLTextAreaElement) return;
+  event.preventDefault();
+  state.floor_elements = state.floor_elements.filter(element => element.id !== selectedFloorElementId);
+  selectedFloorElementId = null;
+  setDirty();
+  renderTables();
 });
 const initialView = window.location.hash.slice(1);
 openView(['sala', 'horarios', 'cierres', 'reglas'].includes(initialView) ? initialView : 'sala');

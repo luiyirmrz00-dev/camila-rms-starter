@@ -92,7 +92,13 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       JOIN menu_item_presentation p ON p.item_id = i.id AND p.visible = 1
       LEFT JOIN menu_categories c ON c.id = i.category_id AND c.active = 1
       LEFT JOIN catalog_variants v ON v.item_id = i.id AND v.active = 1
+        AND (i.track_stock = 0 OR COALESCE(v.in_stock, 0) > 0)
       WHERE i.restaurant_id = ? AND i.active = 1 AND i.available_for_sale = 1
+        AND (i.track_stock = 0 OR EXISTS (
+          SELECT 1 FROM catalog_variants stock_variant
+          WHERE stock_variant.item_id = i.id AND stock_variant.active = 1
+            AND COALESCE(stock_variant.in_stock, 0) > 0
+        ))
       ORDER BY c.sort_order, c.name, p.sort_order, i.name, v.name
       `).bind("camila-gastrobar").all(),
       env.DB.prepare(`

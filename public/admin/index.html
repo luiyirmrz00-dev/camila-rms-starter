@@ -16,7 +16,7 @@
       <nav class="admin-nav" aria-label="Secciones de administración">
         <button class="admin-nav-link is-active" type="button" data-view-target="sala"><span aria-hidden="true">▦</span> Sala y mesas</button>
         <button class="admin-nav-link" type="button" data-view-target="horarios"><span aria-hidden="true">◷</span> Horarios</button>
-        <button class="admin-nav-link" type="button" data-view-target="cierres"><span aria-hidden="true">▣</span> Cierres especiales</button>
+        <button class="admin-nav-link" type="button" data-view-target="cierres"><span aria-hidden="true">▣</span> Calendario especial</button>
         <button class="admin-nav-link" type="button" data-view-target="reglas"><span aria-hidden="true">⚙</span> Reglas de reserva</button>
       </nav>
       <div class="sidebar-bottom">
@@ -44,7 +44,7 @@
           <div>
             <p class="eyebrow">PLANO DEL RESTAURANTE</p>
             <h2>Prepara la sala.</h2>
-            <p>Define zonas, capacidad y uniones. La disponibilidad usará estas mesas para evitar solapamientos.</p>
+            <p>Dibuja paredes y elementos de la sala, arrastra las mesas a su sitio y guarda el plano por zona.</p>
           </div>
           <div class="intro-actions">
             <button class="secondary-button" id="add-area" type="button">Añadir zona</button>
@@ -57,11 +57,12 @@
             <div class="card-toolbar">
               <div>
                 <p class="eyebrow">VISTA DE SALA</p>
-                <p class="card-help">Selecciona una mesa para editarla. Usa las flechas cuando la mesa tenga el foco para moverla.</p>
+                <p class="card-help" id="floor-help">Arrastra las mesas para colocarlas. Elige una herramienta para dibujar paredes, barra, acceso, ventanas o columnas.</p>
               </div>
-              <label class="area-filter">Zona
-                <select id="area-filter" name="area-filter"></select>
-              </label>
+              <div class="floor-tools">
+                <label class="area-filter">Zona<select id="area-filter" name="area-filter"></select></label>
+                <label class="area-filter">Herramienta<select id="floor-tool" name="floor-tool"><option value="select">Mover mesas</option><option value="wall">Pared</option><option value="bar">Barra</option><option value="entrance">Acceso</option><option value="window">Ventana</option><option value="column">Columna</option></select></label>
+              </div>
             </div>
             <div class="floor-plan" id="floor-plan" aria-label="Plano interactivo de mesas"></div>
             <div class="floor-legend"><span><i class="legend-seat"></i> Mesa activa</span><span id="table-summary">0 mesas configuradas</span></div>
@@ -73,6 +74,8 @@
             <p class="muted" id="selected-table-description">Aquí podrás ajustar su zona, capacidad, forma y posición.</p>
             <button class="secondary-button" id="edit-table" type="button" disabled>Editar mesa</button>
             <button class="text-button danger-text" id="deactivate-table" type="button" disabled>Desactivar mesa</button>
+            <button class="text-button danger-text" id="remove-floor-element" type="button" hidden>Eliminar elemento del plano</button>
+            <label class="area-filter rotation-control" id="table-rotation-control" hidden>Rotación de mesa<select id="selected-table-rotation"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></label>
             <div class="table-list-wrap">
               <p class="eyebrow">MESAS CONFIGURADAS</p>
               <div class="table-list" id="table-list"></div>
@@ -99,8 +102,8 @@
 
       <section class="admin-view" id="view-cierres" aria-labelledby="page-title" hidden>
         <div class="view-intro">
-          <div><p class="eyebrow">FESTIVOS Y EXCEPCIONES</p><h2>Cierres especiales.</h2><p>Bloquea un día completo o sólo una parte del servicio. Los turnos semanales no se modifican.</p></div>
-          <button class="primary-button" id="add-closure" type="button">＋ Añadir cierre</button>
+          <div><p class="eyebrow">FESTIVOS Y EXCEPCIONES</p><h2>Aperturas y cierres.</h2><p>Programa una apertura para una fecha concreta, incluso si normalmente cerramos ese día. Los cierres especiales prevalecen si coinciden con una apertura.</p></div>
+          <div class="intro-actions"><button class="secondary-button" id="add-special-opening" type="button">＋ Apertura especial</button><button class="primary-button" id="add-closure" type="button">＋ Añadir cierre</button></div>
         </div>
         <div class="closures-list" id="closures-list"></div>
       </section>
@@ -131,10 +134,21 @@
       <label>Zona<select name="area_id" required></select></label>
       <div class="form-row"><label>Código<input name="table_code" maxlength="24" required placeholder="M1"></label><label>Nombre visible<input name="display_name" maxlength="60" placeholder="Mesa 1"></label></div>
       <div class="form-row"><label>Capacidad mínima<input name="min_capacity" type="number" min="1" max="100" required></label><label>Capacidad máxima<input name="max_capacity" type="number" min="1" max="100" required></label></div>
-      <div class="form-row"><label>Forma<select name="shape"><option value="round">Redonda</option><option value="square">Cuadrada</option><option value="rectangle">Rectangular</option><option value="booth">Banco</option></select></label><label>Rotación<input name="rotation" type="number" min="0" max="359" value="0"></label></div>
+      <div class="form-row"><label>Forma<select name="shape"><option value="round">Redonda</option><option value="square">Cuadrada</option><option value="rectangle">Rectangular</option><option value="booth">Banco</option></select></label><label>Rotación<select name="rotation"><option value="0">0°</option><option value="90">90°</option><option value="180">180°</option><option value="270">270°</option></select></label></div>
       <div class="form-row"><label>Posición horizontal<input name="x" type="number" min="0" max="100" value="50" required></label><label>Posición vertical<input name="y" type="number" min="0" max="100" value="50" required></label></div>
       <label class="check-row"><input name="active" type="checkbox" checked> Mesa disponible para reservas</label>
       <div class="dialog-actions"><button class="secondary-button" value="cancel">Cancelar</button><button class="primary-button" id="save-table" type="button">Guardar mesa</button></div>
+    </form>
+  </dialog>
+
+  <dialog class="editor-dialog" id="special-opening-dialog">
+    <form method="dialog" id="special-opening-form">
+      <div class="dialog-heading"><div><p class="eyebrow">EXCEPCIÓN DE CALENDARIO</p><h2>Apertura especial</h2></div><button class="icon-button" value="cancel" aria-label="Cerrar">×</button></div>
+      <label>Fecha<input name="opening_date_local" type="date" required></label>
+      <label>Servicio<input name="service_name" maxlength="40" required value="Servicio especial" placeholder="Comida o cena"></label>
+      <div class="form-row"><label>Abre<input name="opens_at_local" type="time" required value="12:00"></label><label>Cierra<input name="closes_at_local" type="time" required value="16:00"></label></div>
+      <p class="muted">Esta franja sustituye los horarios semanales de esa fecha. Cualquier cierre especial seguirá bloqueando sus horas.</p>
+      <div class="dialog-actions"><button class="secondary-button" value="cancel">Cancelar</button><button class="primary-button" id="save-special-opening" type="button">Añadir apertura</button></div>
     </form>
   </dialog>
 

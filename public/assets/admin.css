@@ -70,10 +70,21 @@ a { color: inherit; }
 .floor-card { min-width: 0; }
 .card-toolbar { min-height: 84px; display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 14px 17px; border-bottom: 1px solid var(--line); }
 .card-help { max-width: 450px; margin: 7px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.floor-tools { display: flex; flex-wrap: wrap; gap: 9px; }
 .area-filter { display: grid; gap: 5px; color: var(--muted); font-size: 9px; font-weight: 650; }
 .area-filter select { min-width: 145px; min-height: 34px; padding: 0 8px; border: 1px solid var(--line); background: var(--paper-white); color: var(--ink); font-size: 10px; }
 .floor-plan { position: relative; min-height: 430px; overflow: hidden; background-color: #f6f2e9; background-image: linear-gradient(rgba(80,91,76,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(80,91,76,.06) 1px, transparent 1px); background-size: 34px 34px; }
+.floor-plan.is-drawing-mode { cursor: crosshair; touch-action: none; }
 .floor-plan::before { position: absolute; inset: 20px; border: 1px dashed #c8c6b7; content: ""; pointer-events: none; }
+.floor-element { position: absolute; z-index: 0; display: grid; place-items: center; min-width: 16px; min-height: 16px; overflow: hidden; padding: 2px; border: 1px solid transparent; color: var(--ink); font-size: 8px; font-weight: 700; cursor: pointer; }
+.floor-element span { overflow: hidden; max-width: 100%; white-space: nowrap; text-overflow: ellipsis; pointer-events: none; }
+.floor-wall { border-color: #55594f; background: #666b60; }
+.floor-bar { border-color: #8a643b; background: #d9ba8d; }
+.floor-entrance { border-color: #53765b; background: rgba(111,157,119,.48); }
+.floor-window { border-color: #577b87; background: repeating-linear-gradient(135deg, #c6dce0 0 6px, #a8c8cf 6px 10px); }
+.floor-column { border-color: #74776f; border-radius: 50%; background: #d1d1c8; }
+.floor-element:hover, .floor-element.is-selected { z-index: 2; outline: 2px solid var(--terracotta); outline-offset: 1px; }
+.floor-element.is-drawing { z-index: 5; pointer-events: none; opacity: .7; }
 .table-marker { position: absolute; z-index: 1; min-width: 57px; min-height: 56px; display: grid; align-content: center; justify-items: center; gap: 1px; padding: 6px; border: 1px solid #748371; background: #e2e8db; color: var(--ink); font-size: 10px; font-weight: 750; cursor: grab; touch-action: none; user-select: none; }
 .table-marker.table-round { border-radius: 50%; }
 .table-marker.table-square { width: 66px; height: 61px; }
@@ -93,6 +104,8 @@ a { color: inherit; }
 .detail-card > .muted { min-height: 45px; margin: 0 0 12px; }
 .detail-card > .secondary-button { width: 100%; }
 .detail-card > .text-button { width: 100%; text-align: center; }
+.rotation-control { margin-top: 10px; }
+.rotation-control select { min-width: 0; min-height: 36px; padding: 0 9px; border: 1px solid var(--line); background: #fffdf8; color: var(--ink); font-size: 11px; }
 .table-list-wrap { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--line); }
 .table-list-wrap .eyebrow { margin-bottom: 9px; color: var(--muted); font-size: 8px; }
 .table-list { display: grid; max-height: 265px; overflow: auto; overscroll-behavior: contain; }
@@ -123,6 +136,9 @@ a { color: inherit; }
 .remove-hour { margin-bottom: 1px; color: var(--danger); }
 .closures-list { gap: 0; border-top: 1px solid var(--line); }
 .closure-row { padding: 17px 13px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); border-left: 1px solid var(--line); background: var(--paper-white); }
+.exception-badge { display: inline-block; margin-right: 9px; padding: 4px 6px; font: 700 8px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: .06em; text-transform: uppercase; }
+.exception-badge.is-closed { background: #f2ddd4; color: var(--danger); }
+.exception-badge.is-open { background: #dfebdc; color: var(--success); }
 .rules-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; }
 .rules-grid > label { padding: 18px; border-bottom: 1px solid var(--line); }
 .rules-grid > label:nth-child(odd) { border-right: 1px solid var(--line); }

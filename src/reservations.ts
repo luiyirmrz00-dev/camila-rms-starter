@@ -277,16 +277,22 @@ async function loadOccupiedSlots(env: Env, start: string, end: string): Promise<
 
 async function calculateAvailability(env: Env, date: string, partySize: number): Promise<AvailableSlot[]> {
   const weekday = localWeekday(date);
-  const [rules, hours, closures, seatingOptions] = await Promise.all([
+  const [rules, weeklyHours, specialHours, closures, seatingOptions] = await Promise.all([
     loadRules(env),
     env.DB.prepare(`
       SELECT id, service_name, opens_at_local, closes_at_local
       FROM opening_hours WHERE restaurant_id = ? AND weekday = ? AND active = 1
       ORDER BY opens_at_local
     `).bind(RESTAURANT_ID, weekday).all<OpeningHour>(),
+    env.DB.prepare(`
+      SELECT id, service_name, opens_at_local, closes_at_local
+      FROM restaurant_special_openings WHERE restaurant_id = ? AND opening_date_local = ?
+      ORDER BY opens_at_local
+    `).bind(RESTAURANT_ID, date).all<OpeningHour>(),
     getClosedIntervals(env, date),
     loadSeatingOptions(env)
   ]);
+  const hours = specialHours.results.length ? specialHours : weeklyHours;
 
   if (partySize > rules.max_party_size_online) return [];
   const options = seatingOptions.filter(option => partySize >= option.minCapacity && partySize <= option.maxCapacity);
