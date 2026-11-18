@@ -7,6 +7,7 @@ import {
 } from "./integrations/loyverse";
 import { AdminAuthError, bootstrapFirstOwner, requireAdmin, requireBootstrapOwner } from "./integrations/access";
 import { handleAdminSetupRoute } from "./admin-setup";
+import { handleReservationRoute } from "./reservations";
 
 export interface Env {
   DB: D1Database;
@@ -127,6 +128,9 @@ async function handleApi(request: Request, env: Env): Promise<Response> {
       throw error;
     }
   }
+
+  const reservationRoute = await handleReservationRoute(request, env);
+  if (reservationRoute) return reservationRoute;
 
   // Development-only diagnostics and initial catalogue import. These routes are
   // deliberately unavailable outside APP_ENV=development until admin auth/RBAC exists.
