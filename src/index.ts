@@ -161,7 +161,21 @@ export default {
     if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) {
       try {
         if (url.pathname === "/admin/bootstrap.html") await requireBootstrapOwner(request, env);
-        else await requireAdmin(request, env);
+        else {
+          try {
+            await requireAdmin(request, env);
+          } catch (error) {
+            if (error instanceof AdminAuthError && error.status === 403) {
+              try {
+                await requireBootstrapOwner(request, env);
+                return Response.redirect(new URL("/admin/bootstrap.html", url).toString(), 302);
+              } catch {
+                // Preserve the original admin authorization error for non-bootstrap users.
+              }
+            }
+            throw error;
+          }
+        }
       } catch (error) {
         if (error instanceof AdminAuthError) return json({ error: error.message }, error.status);
         return json({ error: "No se pudo validar el acceso al panel." }, 503);
