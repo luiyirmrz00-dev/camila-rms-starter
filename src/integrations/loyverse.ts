@@ -203,6 +203,8 @@ export async function syncCatalog(env: Env, storeId: string, updatedAtMin?: stri
       name = excluded.name,
       active = excluded.active,
       last_synced_at = excluded.last_synced_at
+    WHERE menu_categories.name IS NOT excluded.name
+       OR menu_categories.active IS NOT excluded.active
   `).bind(
     categoryId(category.id), RESTAURANT_ID, category.id, category.name,
     category.deleted_at ? 0 : 1, now, classifyMenuSection(category.name)
@@ -247,6 +249,14 @@ export async function syncCatalog(env: Env, storeId: string, updatedAtMin?: stri
         source_updated_at = excluded.source_updated_at,
         last_synced_at = excluded.last_synced_at,
         raw_source_json = excluded.raw_source_json
+      WHERE catalog_items.category_id IS NOT excluded.category_id
+         OR catalog_items.name IS NOT excluded.name
+         OR catalog_items.description IS NOT excluded.description
+         OR catalog_items.available_for_sale IS NOT excluded.available_for_sale
+         OR catalog_items.active IS NOT excluded.active
+         OR catalog_items.track_stock IS NOT excluded.track_stock
+         OR catalog_items.source_updated_at IS NOT excluded.source_updated_at
+         OR catalog_items.raw_source_json IS NOT excluded.raw_source_json
     `).bind(
       itemId(item.id), RESTAURANT_ID, item.id, catId, item.item_name,
       item.description ?? null, itemAvailable ? 1 : 0, item.deleted_at ? 0 : 1, item.track_stock ? 1 : 0,
@@ -280,6 +290,13 @@ export async function syncCatalog(env: Env, storeId: string, updatedAtMin?: stri
           store_id = excluded.store_id,
           active = excluded.active,
           last_synced_at = excluded.last_synced_at
+        WHERE catalog_variants.item_id IS NOT excluded.item_id
+           OR catalog_variants.name IS NOT excluded.name
+           OR catalog_variants.sku IS NOT excluded.sku
+           OR catalog_variants.price_minor IS NOT excluded.price_minor
+           OR catalog_variants.currency IS NOT excluded.currency
+           OR catalog_variants.store_id IS NOT excluded.store_id
+           OR catalog_variants.active IS NOT excluded.active
       `).bind(
         `loyverse-variant-${variant.variant_id}`,
         itemId(item.id),
@@ -358,6 +375,13 @@ export async function syncCatalog(env: Env, storeId: string, updatedAtMin?: stri
           store_id = excluded.store_id,
           active = excluded.active,
           last_synced_at = excluded.last_synced_at
+        WHERE catalog_variants.item_id IS NOT excluded.item_id
+           OR catalog_variants.name IS NOT excluded.name
+           OR catalog_variants.sku IS NOT excluded.sku
+           OR catalog_variants.price_minor IS NOT excluded.price_minor
+           OR catalog_variants.currency IS NOT excluded.currency
+           OR catalog_variants.store_id IS NOT excluded.store_id
+           OR catalog_variants.active IS NOT excluded.active
       `).bind(
         `loyverse-variant-${variant.variant_id}`,
         parent.id,
@@ -397,18 +421,18 @@ export async function syncCatalog(env: Env, storeId: string, updatedAtMin?: stri
     SELECT v.id, v.loyverse_variant_id, i.track_stock
     FROM catalog_variants v
     JOIN catalog_items i ON i.id = v.item_id
-    WHERE i.restaurant_id = ? AND v.store_id = ?
+    WHERE i.restaurant_id = ? AND v.store_id = ? AND v.active = 1
   `).bind(RESTAURANT_ID, storeId).all<{ id: string; loyverse_variant_id: string; track_stock: number }>();
-  const inventoryStatements = storedVariants.results.map(variant => env.DB.prepare(`
-    UPDATE catalog_variants
-    SET in_stock = ?, last_synced_at = ?
-    WHERE id = ? AND store_id = ?
-  `).bind(
-    variant.track_stock ? Math.max(0, stockByVariant.get(variant.loyverse_variant_id) ?? 0) : null,
-    now,
-    variant.id,
-    storeId
-  ));
+  const inventoryStatements = storedVariants.results.map(variant => {
+    const inStock = variant.track_stock
+      ? Math.max(0, stockByVariant.get(variant.loyverse_variant_id) ?? 0)
+      : null;
+    return env.DB.prepare(`
+      UPDATE catalog_variants
+      SET in_stock = ?, last_synced_at = ?
+      WHERE id = ? AND store_id = ? AND in_stock IS NOT ?
+    `).bind(inStock, now, variant.id, storeId, inStock);
+  });
   for (const batch of chunks(inventoryStatements, 50)) await env.DB.batch(batch);
 
   // Update restaurant contact/location details from the selected Loyverse store only when present.
@@ -420,7 +444,16 @@ export async function syncCatalog(env: Env, storeId: string, updatedAtMin?: stri
         address = COALESCE(?, address),
         updated_at = ?
     WHERE id = ?
-  `).bind(store.phone_number ?? null, addressParts.length ? addressParts.join(", ") : null, now, RESTAURANT_ID).run();
+      AND (phone_e164 IS NOT COALESCE(?, phone_e164)
+        OR address IS NOT COALESCE(?, address))
+  `).bind(
+    store.phone_number ?? null,
+    addressParts.length ? addressParts.join(", ") : null,
+    now,
+    RESTAURANT_ID,
+    store.phone_number ?? null,
+    addressParts.length ? addressParts.join(", ") : null
+  ).run();
 
   const completedAt = new Date().toISOString();
   await env.DB.prepare(`
